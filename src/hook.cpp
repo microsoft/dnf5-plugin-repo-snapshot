@@ -1,4 +1,7 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
 // SPDX-License-Identifier: MIT
+
 #include <cstring>
 #include <iostream>
 #include <libdnf5/base/base.hpp>
