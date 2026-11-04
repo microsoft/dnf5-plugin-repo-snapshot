@@ -1,14 +1,77 @@
-# Project
+# DNF5 repository snapshot plugin
 
-> This repo has been populated by an initial template to help get you started. Please
-> make sure to update the content to build a great experience for community-building.
+Use `--snapshot-time` to limit DNF5 repository packages to those published at
+or before a chosen time.
 
-As the maintainer of this project, please make a few updates:
+## Usage
 
-- Improving this README.MD file to provide a great experience
-- Updating SUPPORT.MD with content about this project's support experience
-- Understanding the security reporting process in SECURITY.MD
-- Remove this section from the README
+The cutoff is a Unix timestamp. For example, to use packages published by
+November 1, 2026 at midnight UTC:
+
+```sh
+cutoff=$(date -u -d '2026-11-01 00:00:00' +%s)
+
+dnf5 --snapshot-time="$cutoff" repoquery --available bash
+dnf5 --snapshot-time="$cutoff" install bash
+dnf5 --snapshot-time="$cutoff" upgrade
+```
+
+To leave selected repositories unrestricted, use their IDs or glob patterns:
+
+```sh
+dnf5 --snapshot-time="$cutoff" --snapshot-exclude-repos='hotfix*,extra' install bash
+```
+
+The option supports several forms:
+
+| Selection | Example |
+|---|---|
+| One repository | `--snapshot-exclude-repos=hotfix` |
+| Several repositories | `--snapshot-exclude-repos=hotfix,extra` |
+| Glob pattern | `--snapshot-exclude-repos='hotfix*'` |
+| Repeated option | `--snapshot-exclude-repos=hotfix --snapshot-exclude-repos=extra` |
+
+## Build and install
+
+Requirements:
+
+- Linux, a C++20 compiler, CMake 3.18+, Make, and pkg-config.
+- Development headers and libraries for DNF5, libdnf5, libdnf5-cli, and libsolv.
+- An SDK built with the [Azure Linux API patches](https://github.com/microsoft/azurelinux/pull/19832)
+  for publication timestamps and plugin hooks.
+
+```sh
+cmake -S . -B .build -DSNAPSHOT_BUILD_PLUGINS=ON \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+  -DCMAKE_INSTALL_SYSCONFDIR=/etc
+cmake --build .build
+ctest --test-dir .build --output-on-failure
+sudo cmake --install .build
+```
+
+Match the install prefix and `CMAKE_INSTALL_LIBDIR` to your DNF5 installation.
+Set `PKG_CONFIG_PATH` if your SDK is outside the usual search paths.
+
+For unit tests without the SDK, configure with `-DSNAPSHOT_BUILD_PLUGINS=OFF`
+and skip installation.
+
+## How it works
+
+After DNF5 loads repository metadata, the backend excludes available packages
+whose rpm-md `<time file>` publication timestamp is newer than the cutoff.
+Installed packages and cached metadata are unchanged. DNF5 resolves dependencies
+normally; this filter does not recreate a historical repository or guarantee
+that its remaining packages have all their dependencies.
+
+With a cutoff, missing publication timestamps and direct local/URL RPM inputs
+fail explicitly.
+
+## Further reading
+
+- [DNF5 documentation](https://dnf5.readthedocs.io/en/latest/)
+- [DNF5 plugin development](https://dnf5.readthedocs.io/en/latest/tutorial/plugins/index.html)
+- [Security policy](SECURITY.md)
+- [MIT license](LICENSE)
 
 ## Contributing
 
