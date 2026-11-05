@@ -1,4 +1,7 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
 // SPDX-License-Identifier: MIT
+
 #include "snapshot.hpp"
 
 #include <charconv>

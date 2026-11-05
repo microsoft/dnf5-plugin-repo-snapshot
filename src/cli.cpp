@@ -1,4 +1,7 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
 // SPDX-License-Identifier: MIT
+
 #include <libdnf5/utils/bgettext/bgettext-mark.h>
 
 #include <cstring>
