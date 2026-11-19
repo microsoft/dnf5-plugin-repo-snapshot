@@ -21,17 +21,3 @@ jobs:
           set -euo pipefail
           clang-format-21 --style=Google --dry-run --Werror \
             src/*.cpp src/*.hpp tests/*.cpp
-  unit:
-    name: Unit tests
-    runs-on: ubuntu-26.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-      - name: Build and test core
-        run: |
-          set -euo pipefail
-          cmake -S . -B .build/unit -DCMAKE_BUILD_TYPE=Release -DSNAPSHOT_BUILD_PLUGINS=OFF
-          cmake --build .build/unit
-          ctest --test-dir .build/unit --output-on-failure

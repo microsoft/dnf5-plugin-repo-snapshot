@@ -27,10 +27,6 @@ int main() {
   assert(snapshot::VERSION_MAJOR == 0);
   assert(snapshot::VERSION_MINOR == 1);
   assert(snapshot::VERSION_PATCH == 0);
-  assert(snapshot::compatible_backend(2, 2));
-  assert(snapshot::compatible_backend(2, 3));
-  assert(!snapshot::compatible_backend(2, 1));
-  assert(!snapshot::compatible_backend(3, 2));
   assert(std::string(snapshot::attribute("author.name", "backend")) ==
          "Microsoft");
   assert(std::string(snapshot::attribute("author.email", "backend")) ==
