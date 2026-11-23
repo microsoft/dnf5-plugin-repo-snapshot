@@ -2,10 +2,9 @@
 // Licensed under the MIT License.
 // SPDX-License-Identifier: MIT
 
-#include <cstring>
 #include <iostream>
 #include <libdnf5/base/base.hpp>
-#include <libdnf5/conf/option_string_list.hpp>
+#include <libdnf5/conf/config_parser.hpp>
 #include <libdnf5/conf/vars.hpp>
 #include <libdnf5/plugin/iplugin.hpp>
 #include <libdnf5/repo/repo_query.hpp>
@@ -15,16 +14,17 @@
 #include <set>
 #include <stdexcept>
 
+#include "config.hpp"
 #include "snapshot.hpp"
 
 namespace {
 
-// The backend half checks repository inputs and adds exclusions to this
-// invocation's sack.
+// Check repository inputs and add exclusions to this invocation's sack.
 class SnapshotHook final : public libdnf5::plugin::IPlugin {
  public:
-  SnapshotHook(libdnf5::plugin::IPluginData& data, libdnf5::ConfigParser&)
-      : IPlugin(data) {}
+  SnapshotHook(libdnf5::plugin::IPluginData& data,
+               libdnf5::ConfigParser& config)
+      : IPlugin(data), config(config) {}
   libdnf5::PluginAPIVersion get_api_version() const noexcept override {
     return libdnf5::PLUGIN_API_VERSION;
   }
@@ -43,38 +43,18 @@ class SnapshotHook final : public libdnf5::plugin::IPlugin {
         name, "Filters available packages by repository publication time");
   }
 
+  void post_base_setup() override {
+    settings = snapshot::read_settings(config, *get_base().get_vars());
+  }
+
   // Once repositories are loaded, resolve the requested exemptions,
   // then mark post-cutoff packages. Add to existing in-memory exclusions; do
   // not rewrite cached metadata or remove installed packages.
   void repos_loaded() override {
-    auto& base = get_base();
-    const auto vars = base.get_vars();
-    const bool active = vars->contains(snapshot::TIME_VAR);
-    const bool has_exemptions = vars->contains(snapshot::EXEMPT_REPOS_VAR);
-    // The CLI writes these private keys at runtime. Reject ambient
-    // environment/varsdir values so they cannot activate filtering or change
-    // the requested exemptions.
-    const auto runtime = libdnf5::Vars::Priority::RUNTIME;
-    const bool invalid_cutoff_source =
-        active && vars->get(snapshot::TIME_VAR).priority != runtime;
-    const bool invalid_exemption_source =
-        has_exemptions &&
-        vars->get(snapshot::EXEMPT_REPOS_VAR).priority != runtime;
-    if (invalid_cutoff_source || invalid_exemption_source) {
-      throw std::runtime_error(
-          "snapshot: variables must be set by the DNF5 CLI, not an environment "
-          "or varsdir fallback");
-    }
-    if (!active) {
-      // Also guard runtime handoffs that bypass the CLI's argument checks.
-      if (has_exemptions) {
-        throw std::runtime_error(
-            "snapshot: repository exemptions require --snapshot-time");
-      }
+    if (!settings.cutoff) {
       return;
     }
-    const auto cutoff =
-        snapshot::parse_time(vars->get_value(snapshot::TIME_VAR));
+    auto& base = get_base();
     libdnf5::repo::RepoQuery repos(base);
     std::set<std::string> enabled;
     for (auto repo : repos) {
@@ -84,18 +64,16 @@ class SnapshotHook final : public libdnf5::plugin::IPlugin {
       }
     }
     std::set<std::string> exempt;
-    libdnf5::OptionStringList patterns("");
-    if (has_exemptions) {
-      patterns.set(vars->get_value(snapshot::EXEMPT_REPOS_VAR));
-    }
-    for (const auto& pattern : patterns.get_value()) {
+    for (const auto& pattern : settings.exempt_repos) {
       libdnf5::repo::RepoQuery matches(base);
       matches.filter_type(libdnf5::repo::Repo::Type::AVAILABLE);
       matches.filter_enabled(true);
       matches.filter_id(pattern, libdnf5::sack::QueryCmp::GLOB);
       if (matches.empty()) {
         throw std::runtime_error(
-            "snapshot: exempt repository not enabled or not found: " + pattern);
+            "snapshot: snapshot-exclude-repos pattern not enabled or not "
+            "found: " +
+            pattern);
       }
       for (auto repo : matches) {
         exempt.insert(repo->get_id());
@@ -118,8 +96,8 @@ class SnapshotHook final : public libdnf5::plugin::IPlugin {
       if (!enabled.contains(id) || exempt.contains(id)) {
         continue;
       }
-      if (snapshot::filter_package(package.get_file_time(), cutoff, false,
-                                   false, id, package.get_nevra())) {
+      if (snapshot::filter_package(package.get_file_time(), settings.cutoff,
+                                   false, false, id, package.get_nevra())) {
         excluded.add(package);
       }
     }
@@ -130,22 +108,25 @@ class SnapshotHook final : public libdnf5::plugin::IPlugin {
   // be checked against repository publication metadata when a cutoff is active.
   void pre_add_cmdline_packages(
       const std::vector<std::string>& paths) override {
-    if (get_base().get_vars()->contains(snapshot::TIME_VAR)) {
+    if (settings.cutoff) {
       for (const auto& spec : paths) {
         if (spec.ends_with(".rpm") || spec.find("://") != std::string::npos) {
           throw std::runtime_error(
               "snapshot: local and URL RPM inputs are unsupported with "
-              "--snapshot-time");
+              "snapshot-time");
         }
       }
     }
   }
+
+ private:
+  libdnf5::ConfigParser& config;
+  snapshot::Settings settings;
 };
 
 }  // namespace
 
-// libdnf5 resolves these fixed, unmangled loader entry points into this C++
-// backend.
+// libdnf5 resolves these fixed, unmangled loader entry points.
 extern "C" libdnf5::PluginAPIVersion libdnf_plugin_get_api_version() {
   return libdnf5::PLUGIN_API_VERSION;
 }
